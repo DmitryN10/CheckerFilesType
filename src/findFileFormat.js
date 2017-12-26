@@ -1,6 +1,4 @@
 var fff = (function () {
-    "use strict";
-    //________________________________________
     var toBytes = function (s) {
         var data = [];
         for (var i = 0; i < s.length; i++) {
@@ -8,23 +6,9 @@ var fff = (function () {
         }
         return data;
     };
-    const xpiZipFilename = function () {return toBytes('META-INF/mozilla.rsa')};
     const oxmlContentTypes = function () {return toBytes('[Content_Types].xml');};
     const oxmlRels = function () {toBytes('_rels/.rels');};
-    //________________________________________
-    function test(arr, arr2) {
-        if (arr.length != arr2.length) return false;
-        var on = 0;
-        for (var i = 0; i < arr.length; i++) {
-            for (var j = 0; j < arr2.length; j++) {
-                if (arr[i] === arr2[j]) {
-                    on++;
-                    break;
-                }
-            }
-        }
-        return on == arr.length ? true : false;
-    }
+
     function getType(input) {
         var buf = (input instanceof Uint8Array) ? input : new Uint8Array(input);
         if (!(buf && buf.length > 1)) {
@@ -47,7 +31,10 @@ var fff = (function () {
                 }
             }
             return true;
-        };
+        }
+        function checkString(header, options) {
+            return check(toBytes(header), options);
+        }
 
         if (check([0xFF, 0xD8, 0xFF])) {
             return {
@@ -61,6 +48,71 @@ var fff = (function () {
                 mime: 'application/pdf'
             };
         }
+        // Zip-based file formats
+        // Need to be before the `zip` check
+        if (check([0x50, 0x4B, 0x3, 0x4])) {
+            // https://github.com/file/file/blob/master/magic/Magdir/msooxml
+            if (check(oxmlContentTypes, {offset: 30}) || check(oxmlRels, {offset: 30})) {
+                var sliced = buf.subarray(4, 4 + 2000);
+                var nextZipHeaderIndex = function(arr) {
+                    for(var i = 0; i < arr.length - 3; i++){
+                        if( arr[i] === 0x50 && arr[i + 1] === 0x4B && arr[i + 2] === 0x3 && arr[i + 3] === 0x4){
+                            return i;
+                        }
+                    }
+                };
+                var header2Pos = nextZipHeaderIndex(sliced);
+
+                if (header2Pos !== -1) {
+                    var slicedAgain = buf.subarray(header2Pos + 8, header2Pos + 8 + 1000);
+                    var header3Pos = nextZipHeaderIndex(slicedAgain);
+
+                    if (header3Pos !== -1) {
+                        var offset = 8 + header2Pos + header3Pos + 30;
+
+                        if (checkString('word/', {offset: offset})) {
+                            return {
+                                ext: 'docx',
+                                mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                            };
+                        }
+
+                        if (checkString('ppt/', {offset: offset})) {
+                            return {
+                                ext: 'pptx',
+                                mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                            };
+                        }
+
+                        if (checkString('xl/', {offset: offset})) {
+                            return {
+                                ext: 'xlsx',
+                                mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                            };
+                        }
+                    }
+                }
+            }
+        }
+        if (check([0x50, 0x4B]) && (buf[2] === 0x3 || buf[2] === 0x5 || buf[2] === 0x7) && (buf[3] === 0x4 || buf[3] === 0x6 || buf[3] === 0x8)) {
+            return {
+                ext: 'zip',
+                mime: 'application/zip'
+            };
+        }
+        if (check([0x52, 0x61, 0x72, 0x21, 0x1A, 0x7]) && (buf[6] === 0x0 || buf[6] === 0x1)) {
+            return {
+                ext: 'rar',
+                mime: 'application/x-rar-compressed'
+            };
+        }
+        if (checkString('<?xml ')) {
+            return {
+                ext: 'xml',
+                mime: 'application/xml'
+            };
+        }
+        return null;
     }
 
     var fff = {
