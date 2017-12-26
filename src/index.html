@@ -1,0 +1,23 @@
+<html>
+<head>
+    <meta charset="UTF-8">
+</head>
+    <body>
+    <div style="width: 320px; margin: 0 auto">
+        <input type="file" onchange="processFile(this)">
+        <script type="text/javascript" src="findFileFormat.js"></script>
+    </div>
+    <script>
+    function processFile(e) {
+        fff.find(e.files[0],
+            function(format) {
+                alert("The format of the file is " + format);
+            },
+            function() {
+                alert("can not determine file format")
+            }
+        )
+    } 
+    </script>   
+    </body>
+</html>
